@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+if [[ -z $WANIKANI_TOKEN ]]; then
+    echo "Environment variable WANIKANI_TOKEN not set"
+    exit 1
+fi
+
+# Get Information about the available lessons/reviews
+summary=$(curl -s -H"Authorization: Bearer $WANIKANI_TOKEN" -H "Wanikani-Revision: 20170710" https://api.wanikani.com/v2/summary)
+num_lessons=$(echo "$summary" | jq -r '.data.lessons[0].subject_ids | length')
+
+next_reviews_at=$(echo "$summary" | jq -r '.data.next_reviews_at')
+current_hour=$(TZ=UTC date +%Y-%m-%dT%H:00:00.000000Z)
+num_reviews=0
+if [[ "$current_hour" == "$next_reviews_at" ]]; then
+    num_reviews=$(echo "$summary" | jq -r '.data.reviews[] | select(.available_at == "'$current_hour'") | .subject_ids | length')
+fi
+
+# Get number of items with level Guru or higher
+next_url="https://api.wanikani.com/v2/assignments?srs_stages=5,6,7,8,9"
+num_kanji=0
+num_vocab=0
+while [[ $next_url != "null" ]]; do
+    assignments=$(curl -s -H"Authorization: Bearer $WANIKANI_TOKEN" -H "Wanikani-Revision: 20170710" "$next_url")
+    next_url=$(echo "$assignments" | jq -r '.pages.next_url')
+    tmp_kanji=$(echo "$assignments" | jq -r '.data | map(select(.data.subject_type == "kanji")) | length')
+    tmp_vocab=$(echo "$assignments" | jq -r '.data | map(select(.data.subject_type == "vocabulary")) | length')
+
+    num_kanji=$((num_kanji + tmp_kanji))
+    num_vocab=$((num_vocab + tmp_vocab))
+done
+
+echo 勉強 $num_lessons/$num_reviews 漢字 $num_kanji 単語 $num_vocab
